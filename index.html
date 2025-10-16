@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>股票收益智能计算器（离线 OCR + PDF 支持）</title>
+<title>股票收益智能计算器</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css">
 <style>
   :root{--bg:#f7f9fc;--card:#fff;--accent:#0b74ff;--muted:#666}
@@ -56,7 +56,7 @@
   <header>
     <div>
       <h1>股票收益智能计算器</h1>
-      <div class="small">全部在浏览器运行 — 不上传文件 | 结果保存在本地（支持导出/导入）</div>
+      <div class="small">全部在浏览器运行 — 不上传文件 | 支持小数股数（如0.5股）</div>
     </div>
     <nav>
       <button id="tabCalc" class="active">计算器</button>
@@ -79,7 +79,7 @@
           <span id="rateDisplay">--</span>
           <span class="small" id="rateInfo">（更新时间：--）</span>
           
-          <!-- 手动汇率输入框（默认隐藏） -->
+          <!-- 手动汇率输入框 -->
           <div class="rate-manual-input" id="manualRateContainer" style="display:none;">
             <input id="manualRateInput" type="number" step="0.00001" min="0.00001" placeholder="输入汇率值" style="width:120px;">
             <button id="applyManualRate" class="ghost" style="padding:3px 8px;">应用</button>
@@ -98,8 +98,9 @@
     <div class="row"><label for="sellPrice">卖出价格 (USD)</label>
       <input id="sellPrice" type="number" step="0.00001" min="0" placeholder="例：101.20000"></div>
 
-    <div class="row"><label for="shares">股数</label>
-      <input id="shares" type="number" step="1" min="1" placeholder="例：5"></div>
+    <!-- 股数输入框修改：支持小数 -->
+    <div class="row"><label for="shares">股数（支持小数）</label>
+      <input id="shares" type="number" step="0.00001" min="0.00001" placeholder="例：5.2 或 0.5"></div>
 
     <div class="row"><label for="buyFee">买入手续费 (USD)</label>
       <input id="buyFee" type="number" step="0.00001" min="0" placeholder="例：1.89000"></div>
@@ -158,7 +159,7 @@
     <div class="row">
       <label>识别目标</label>
       <select id="targetFields">
-        <option value="auto">自动提取：买入价/卖出价/股数</option>
+        <option value="auto">自动提取：买入价/卖出价/股数（支持小数）</option>
         <option value="numbers">仅提取数字，供手动选择</option>
       </select>
     </div>
@@ -176,7 +177,7 @@
     <div style="margin-top:12px">
       <h4>识别结果（每个文件）</h4>
       <table id="ocrResultTable">
-        <thead><tr><th>文件名</th><th>提取文本（摘要）</th><th>建议买入价</th><th>建议卖出价</th><th>建议股数</th><th>操作</th></tr></thead>
+        <thead><tr><th>文件名</th><th>提取文本（摘要）</th><th>建议买入价</th><th>建议卖出价</th><th>建议股数（支持小数）</th><th>操作</th></tr></thead>
         <tbody></tbody>
       </table>
       <div class="small" style="margin-top:8px">识别后点击“填入计算器”可把该行数值复制到计算器页面；可手动微调后计算。</div>
@@ -187,10 +188,10 @@
   <section id="pageRecords" class="card" style="display:none">
     <div class="flex-between">
       <h3>历史记录</h3>
-      <div class="small">记录保存在本地浏览器，可导出/导入</div>
+      <div class="small">记录保存在本地浏览器，支持小数股数</div>
     </div>
     <table id="recordsTable">
-      <thead><tr><th>时间</th><th>买入价</th><th>卖出价</th><th>股数</th><th>买入手续费</th><th>卖出手续费</th><th>美元盈利</th><th>人民币盈利</th><th>汇率(USD→CNY)</th><th>操作</th></tr></thead>
+      <thead><tr><th>时间</th><th>买入价</th><th>卖出价</th><th>股数（支持小数）</th><th>买入手续费</th><th>卖出手续费</th><th>美元盈利</th><th>人民币盈利</th><th>汇率(USD→CNY)</th><th>操作</th></tr></thead>
       <tbody></tbody>
     </table>
   </section>
@@ -208,7 +209,7 @@
       <input id="rateCacheDays" type="number" min="0" step="1" value="7"></div>
     <div class="row"><label>自动合并导入记录</label>
       <select id="mergeOnImport"><option value="ask">导入时询问</option><option value="append">追加</option><option value="skipduplicates">跳过重复</option></select></div>
-    <div class="small">说明：自动模式下会使用缓存的汇率（缓存周期由上面设置决定）；手动模式下需自行输入汇率值。</div>
+    <div class="small">说明：自动模式下会使用缓存的汇率；支持小数股数计算，最小精度为0.00001股。</div>
   </section>
 </div>
 
@@ -222,7 +223,7 @@
    ================================ */
 const LOCAL_RECORDS_KEY = 'stock_ocr_records_v1';
 const RATE_CACHE_KEY = 'stock_rate_cache_v1';
-const MANUAL_RATE_KEY = 'stock_manual_rate_v1'; // 保存手动汇率
+const MANUAL_RATE_KEY = 'stock_manual_rate_v1';
 const OCR_LOG = document.getElementById('ocrLog');
 
 function logOCR(msg){
@@ -232,22 +233,19 @@ function logOCR(msg){
 }
 function clearOCRLog(){ OCR_LOG.textContent = ''; }
 
-function safeText(s){ // 保证显示安全
+function safeText(s){
   return String(s);
 }
 
 // 提取所有可能的数字（含小数、逗号千分位）
 function extractNumbers(text){
-  // 去掉中文千分逗号样式（，）以及空格
   const cleaned = text.replace(/，/g,',').replace(/\s+/g,' ');
-  // 找到类似 123,456.789 或 123.45 或 .123 等
   const re = /-?\d{1,3}(?:[,\s]\d{3})*(?:\.\d+)?|-?\d+\.\d+|-?\d+/g;
   const arr = cleaned.match(re) || [];
-  // 去逗号并转为 Number（尽量保留原字符串）
   return arr.map(s => s.replace(/[, ]/g,''));
 }
 
-// 简单的关键字匹配提取：优先查找包含关键字行
+// 关键字匹配提取（支持小数股数）
 function heuristicExtract(text){
   const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   let candidates = {buy:null,sell:null,shares:null,found:false};
@@ -257,23 +255,19 @@ function heuristicExtract(text){
 
   for(const line of lines){
     const low = line.toLowerCase();
-    // 匹配买入关键字
     if (buyKeys.some(k => line.indexOf(k) !== -1 || low.indexOf(k) !== -1)){
       const nums = extractNumbers(line);
       if (nums.length) candidates.buy = nums[0];
     }
-    // 匹配卖出关键字
     if (sellKeys.some(k => line.indexOf(k) !== -1 || low.indexOf(k) !== -1)){
       const nums = extractNumbers(line);
       if (nums.length) candidates.sell = nums[0];
     }
-    // 匹配股数关键字
     if (shareKeys.some(k => line.indexOf(k) !== -1 || low.indexOf(k) !== -1)){
       const nums = extractNumbers(line);
-      if (nums.length) candidates.shares = nums[0];
+      if (nums.length) candidates.shares = nums[0]; // 支持提取小数股数
     }
   }
-  // 若未找到，通过全局数字列表尝试推断
   const allNums = extractNumbers(text);
   if(!candidates.buy && allNums.length>0) candidates.buy = allNums[0];
   if(!candidates.sell && allNums.length>1) candidates.sell = allNums[1];
@@ -292,27 +286,22 @@ const manualRateContainer = document.getElementById('manualRateContainer');
 const manualRateInput = document.getElementById('manualRateInput');
 const applyManualRateBtn = document.getElementById('applyManualRate');
 
-// 切换汇率模式（自动/手动）
+// 切换汇率模式
 function toggleRateMode() {
   const mode = rateMode.value;
   if (mode === 'manual') {
-    // 显示手动输入框，隐藏自动模式信息
     manualRateContainer.style.display = 'inline-flex';
     rateInfo.style.display = 'none';
-    // 加载保存的手动汇率
     const savedManualRate = localStorage.getItem(MANUAL_RATE_KEY);
     if (savedManualRate) {
       manualRateInput.value = savedManualRate;
       rateDisplay.textContent = Number(savedManualRate).toFixed(5);
     }
   } else {
-    // 隐藏手动输入框，显示自动模式信息
     manualRateContainer.style.display = 'none';
     rateInfo.style.display = 'inline';
-    // 自动获取汇率（优先缓存）
     getAutoRate(true);
   }
-  // 触发计算更新
   calculateBreakEven();
   calculateAndDisplay();
 }
@@ -324,15 +313,12 @@ function applyManualRate() {
     alert('请输入有效的汇率值（大于0的数字）');
     return;
   }
-  // 保存手动汇率
   localStorage.setItem(MANUAL_RATE_KEY, manualRate.toString());
-  // 更新显示
   rateDisplay.textContent = manualRate.toFixed(5);
-  // 触发计算更新
   calculateAndDisplay();
 }
 
-// 自动获取汇率（原有逻辑优化）
+// 自动获取汇率
 async function getAutoRate(useCacheIfValid=true) {
   const cfgSource = document.getElementById('rateSource')?.value || 'exchangerate.host';
   const cache = JSON.parse(localStorage.getItem(RATE_CACHE_KEY) || 'null');
@@ -349,7 +335,6 @@ async function getAutoRate(useCacheIfValid=true) {
     }
   }
   
-  // 在线获取
   try {
     let onlineRate;
     if (cfgSource === 'open.er-api') {
@@ -380,7 +365,6 @@ async function getAutoRate(useCacheIfValid=true) {
     console.warn('获取汇率失败', e);
   }
   
-  // 兜底（使用缓存或默认值）
   const fallback = cache ? cache.rate : 7.1;
   rateDisplay.textContent = fallback.toFixed(5);
   rateInfo.textContent = cache && cache.time 
@@ -389,7 +373,7 @@ async function getAutoRate(useCacheIfValid=true) {
   return fallback;
 }
 
-// 获取当前生效的汇率（自动/手动）
+// 获取当前生效的汇率
 async function getCurrentRate() {
   if (rateMode.value === 'manual') {
     const manualRate = Number(localStorage.getItem(MANUAL_RATE_KEY) || manualRateInput.value);
@@ -400,7 +384,7 @@ async function getCurrentRate() {
 }
 
 /* ================================
-   计算与记录（含卖出平衡点）
+   计算与记录（支持散股）
    ================================ */
 function applyAutoRule(){
   const rule = document.getElementById('autoFeeRule').value;
@@ -414,25 +398,23 @@ function applyAutoRule(){
       document.getElementById('sellFee').value = (1.00).toFixed(5);
     }
   }
-  // 自动规则生效后更新平衡点
   calculateBreakEven();
 }
 
-// 计算卖出平衡点（核心逻辑）
+// 计算卖出平衡点（支持小数股数）
 function calculateBreakEven(){
   const buyPrice = Number(document.getElementById('buyPrice').value || 0);
-  const shares = Number(document.getElementById('shares').value || 0);
+  const shares = Number(document.getElementById('shares').value || 0); // 支持小数
   const buyFee = Number(document.getElementById('buyFee').value || 0);
   const sellFee = Number(document.getElementById('sellFee').value || 0);
   
-  // 验证必要参数
+  // 验证：股数必须大于0（允许小数）
   if (shares <= 0 || isNaN(shares) || buyPrice < 0 || isNaN(buyPrice)) {
     document.getElementById('breakEvenPrice').textContent = '--';
     return null;
   }
   
-  // 平衡点公式：(买入总成本 + 卖出手续费) / 股数
-  // 买入总成本 = 买入价 × 股数 + 买入手续费
+  // 平衡点公式：(买入总成本 + 卖出手续费) / 股数（支持小数除法）
   const totalBuyCost = (buyPrice * shares) + buyFee;
   const breakEvenPrice = (totalBuyCost + sellFee) / shares;
   
@@ -441,40 +423,36 @@ function calculateBreakEven(){
 }
 
 async function calculateAndDisplay(){
-  // 应用自动手续费规则
   applyAutoRule();
   
   const buyPrice = Number(document.getElementById('buyPrice').value);
   const sellPrice = Number(document.getElementById('sellPrice').value);
-  const shares = Number(document.getElementById('shares').value);
+  const shares = Number(document.getElementById('shares').value); // 支持小数股数
   const buyFee = Number(document.getElementById('buyFee').value);
   const sellFee = Number(document.getElementById('sellFee').value);
 
-  // 验证输入
-  if([buyPrice, sellPrice, shares, buyFee, sellFee].some(v=>isNaN(v) || v<0) || shares < 1){
-    alert('请输入有效的数值（非负，股数至少为1）。');
+  // 验证：股数>0（允许小数），其他参数非负
+  if([buyPrice, sellPrice, shares, buyFee, sellFee].some(v=>isNaN(v) || v<0) || shares <= 0){
+    alert('请输入有效的数值（非负，股数必须大于0，支持小数）。');
     return null;
   }
 
-  // 计算收益
+  // 盈利计算（支持小数乘法/减法）
   const profitUSD = (sellPrice * shares - sellFee) - (buyPrice * shares + buyFee);
-  const rate = await getCurrentRate(); // 使用当前生效的汇率（自动/手动）
+  const rate = await getCurrentRate();
   const profitCNY = profitUSD * rate;
 
-  // 显示收益
   document.getElementById('profitUSD').textContent = Number(profitUSD).toFixed(5);
   document.getElementById('profitCNY').textContent = Number(profitCNY).toFixed(5);
   
-  // 同步计算并显示平衡点
   calculateBreakEven();
 
   return {profitUSD, profitCNY, rate};
 }
 
-// 绑定计算按钮事件
 document.getElementById('calcBtn').addEventListener('click', calculateAndDisplay);
 
-// 保存记录
+// 保存记录（支持小数股数）
 async function saveRecord(){
   const res = await calculateAndDisplay();
   if(!res) return;
@@ -482,13 +460,13 @@ async function saveRecord(){
     time: new Date().toLocaleString(),
     buyPrice: Number(document.getElementById('buyPrice').value).toFixed(5),
     sellPrice: Number(document.getElementById('sellPrice').value).toFixed(5),
-    shares: Number(document.getElementById('shares').value),
+    shares: Number(document.getElementById('shares').value).toFixed(5), // 保存小数股数（5位精度）
     buyFee: Number(document.getElementById('buyFee').value).toFixed(5),
     sellFee: Number(document.getElementById('sellFee').value).toFixed(5),
     profitUSD: Number(res.profitUSD).toFixed(5),
     profitCNY: Number(res.profitCNY).toFixed(5),
-    rateUsed: Number(res.rate).toFixed(5), // 记录实际使用的汇率
-    rateMode: rateMode.value // 记录汇率模式（自动/手动）
+    rateUsed: Number(res.rate).toFixed(5),
+    rateMode: rateMode.value
   };
   const arr = JSON.parse(localStorage.getItem(LOCAL_RECORDS_KEY) || '[]');
   arr.push(rec);
@@ -498,7 +476,7 @@ async function saveRecord(){
 }
 document.getElementById('saveBtn').addEventListener('click', saveRecord);
 
-// 渲染历史记录（新增汇率列）
+// 渲染历史记录（显示小数股数）
 function renderRecordsTable(){
   const tbody = document.querySelector('#recordsTable tbody');
   tbody.innerHTML = '';
@@ -509,7 +487,7 @@ function renderRecordsTable(){
       r.time, 
       r.buyPrice, 
       r.sellPrice, 
-      String(r.shares), 
+      r.shares, // 显示小数股数
       r.buyFee, 
       r.sellFee, 
       r.profitUSD, 
@@ -527,12 +505,11 @@ function renderRecordsTable(){
     del.className='ghost';
     del.addEventListener('click', ()=>{
       if(!confirm('确认删除这条记录？')) return;
-      // 通过时间+买入价+股数匹配唯一记录
       const orig = JSON.parse(localStorage.getItem(LOCAL_RECORDS_KEY) || '[]');
       const idxFound = orig.findIndex(x => 
         x.time === r.time && 
         x.buyPrice === r.buyPrice && 
-        String(x.shares) === String(r.shares)
+        x.shares === r.shares // 用小数股数匹配记录
       );
       if(idxFound >= 0){ 
         orig.splice(idxFound, 1); 
@@ -599,7 +576,7 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
 });
 
 /* ==============
-   OCR 与 PDF 解析
+   OCR 与 PDF 解析（支持小数股数识别）
    ============== */
 const fileInput = document.getElementById('fileInput');
 const ocrResultBody = document.querySelector('#ocrResultTable tbody');
@@ -611,31 +588,25 @@ async function handleFiles(files){
     try{
       logOCR(`处理文件：${f.name} （${f.type || '未知类型'}）`);
       if(f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')){
-        // 使用 pdf.js 读取页面文本
         const arrayBuffer = await f.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
         let fullText = '';
         for(let p=1;p<=pdf.numPages;p++){
           const page = await pdf.getPage(p);
-          // 提取文本内容
           const txt = await page.getTextContent();
           const pageText = txt.items.map(i=>i.str).join(' ');
           fullText += '\n' + pageText;
         }
         logOCR(`PDF 文本提取完成，共 ${pdf.numPages} 页`);
-        // 提取关键信息
         const candidates = heuristicExtract(fullText);
         addOCRResultRow(f.name, fullText.slice(0,300), candidates);
       } else {
-        // 图片文件：用 Tesseract.js 做 OCR
         logOCR('开始 OCR（Tesseract.js）...');
-        // 创建 blob URL 供 Tesseract 使用
         const blobURL = URL.createObjectURL(f);
         const worker = Tesseract.createWorker({logger:m=>{/* 可选日志 */}});
         await worker.load();
         await worker.loadLanguage('chi_sim+eng');
         await worker.initialize('chi_sim+eng');
-        // 识别图片文本
         const { data: { text } } = await worker.recognize(blobURL);
         await worker.terminate();
         URL.revokeObjectURL(blobURL);
@@ -649,23 +620,22 @@ async function handleFiles(files){
   }
 }
 
-// 添加 OCR 结果行
+// 添加 OCR 结果行（支持小数股数）
 function addOCRResultRow(filename, textSnippet, candidates){
   const tr = document.createElement('tr');
   const tdName = document.createElement('td'); tdName.textContent = filename;
   const tdText = document.createElement('td'); tdText.textContent = textSnippet;
   const tdBuy = document.createElement('td'); tdBuy.textContent = candidates.buy ? candidates.buy : '';
   const tdSell = document.createElement('td'); tdSell.textContent = candidates.sell ? candidates.sell : '';
-  const tdShares = document.createElement('td'); tdShares.textContent = candidates.shares ? candidates.shares : '';
+  const tdShares = document.createElement('td'); tdShares.textContent = candidates.shares ? candidates.shares : ''; // 显示小数股数
   const tdOp = document.createElement('td');
   const fillBtn = document.createElement('button'); fillBtn.textContent='填入计算器'; fillBtn.className='ghost';
   fillBtn.addEventListener('click', ()=>{
     if(candidates.buy) document.getElementById('buyPrice').value = Number(candidates.buy).toFixed(5);
     if(candidates.sell) document.getElementById('sellPrice').value = Number(candidates.sell).toFixed(5);
-    if(candidates.shares) document.getElementById('shares').value = Number(candidates.shares);
-    // 切换到计算器页并更新平衡点
+    if(candidates.shares) document.getElementById('shares').value = Number(candidates.shares); // 填入小数股数
     activateTab('tabCalc');
-    calculateBreakEven(); // 填入后自动计算平衡点
+    calculateBreakEven();
     logOCR(`已将 ${filename} 的识别结果填入计算器（可手动调整）`);
   });
   const copyTextBtn = document.createElement('button'); copyTextBtn.textContent='复制文本'; copyTextBtn.className='ghost';
@@ -680,7 +650,6 @@ function addOCRResultRow(filename, textSnippet, candidates){
   ocrResultBody.appendChild(tr);
 }
 
-// OCR 相关按钮事件
 document.getElementById('startOCRBtn').addEventListener('click', ()=>{
   const files = Array.from(fileInput.files || []);
   if(files.length === 0){ 
@@ -701,17 +670,13 @@ const tabs = {
   tabSettings: document.getElementById('pageSettings')
 };
 function activateTab(tabId){
-  // 切换激活按钮样式
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
   document.getElementById(tabId).classList.add('active');
-  // 显示对应页面
   Object.keys(tabs).forEach(k=>{
     tabs[k].style.display = (k === tabId) ? 'block' : 'none';
   });
-  // 记录页激活时渲染表格
   if(tabId === 'tabRecords') renderRecordsTable();
 }
-// 绑定选项卡切换事件
 document.getElementById('tabCalc').addEventListener('click', ()=>activateTab('tabCalc'));
 document.getElementById('tabOCR').addEventListener('click', ()=>activateTab('tabOCR'));
 document.getElementById('tabRecords').addEventListener('click', ()=>activateTab('tabRecords'));
@@ -720,11 +685,11 @@ document.getElementById('tabSettings').addEventListener('click', ()=>activateTab
 // 输入参数变化时自动更新平衡点
 const inputElements = [
   document.getElementById('buyPrice'),
-  document.getElementById('shares'),
+  document.getElementById('shares'), // 股数变化时更新
   document.getElementById('buyFee'),
   document.getElementById('sellFee'),
   document.getElementById('autoFeeRule'),
-  document.getElementById('sellPrice') // 卖出价变化也影响盈利计算
+  document.getElementById('sellPrice')
 ];
 inputElements.forEach(el => {
   el.addEventListener('input', calculateBreakEven);
@@ -739,16 +704,14 @@ document.getElementById('refreshRateBtn').addEventListener('click', async ()=>{
     alert('当前为手动汇率模式，请切换到自动模式后再刷新');
     return;
   }
-  const r = await getAutoRate(false); // 强制刷新
+  const r = await getAutoRate(false);
   alert(`已刷新自动汇率：1 USD = ${Number(r).toFixed(5)} CNY`);
 });
 
 // 初始化
 function init() {
   activateTab('tabCalc');
-  // 初始化汇率模式
   toggleRateMode();
-  // 加载历史记录
   renderRecordsTable();
 }
 
